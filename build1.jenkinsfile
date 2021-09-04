@@ -1,0 +1,82 @@
+node('master') {
+
+    currentBuild.result = "SUCCESS"
+
+    try {
+
+       stage('Checkout repo'){
+
+         dir('/home/test') {
+            git changelog: false,
+            poll: false,
+            url: 'https://github.com/awschef-code/one2onetool.git',
+            branch: 'master',
+            credentialsId: '<jenkinscredid>'
+        }
+       }
+
+       stage('Environment variables Setup') {
+          script {
+        
+              env.latestTag = sh(returnStdout: true, script: "git tag --sort version:refname | tail -1").trim()
+                
+              currentBuild.displayName='${BUILD_NUMBER}-${JOB_NAME}-${env.latestTag}'
+
+                
+              }
+          
+
+       stage('BuildTest'){
+
+         env.NODE_ENV = "test"
+
+         print "Environment will be : ${env.NODE_ENV}"
+
+         sh 'yum install -y gcc-c++ make ; curl -sL https://rpm.nodesource.com/setup_6.x | sudo -E bash - ; yum install nodejs -y'
+         sh 'node -v ;npm prune ;npm test'
+       }
+
+       stage('Build Docker'){
+            sh 'chmod +x dockerbuild.sh'
+            sh 'id'
+            sh './dockerbuild.sh'
+            sh 'node server'
+       }
+
+       stage('Deploy'){
+
+            echo 'We can verify the new node.js application run'
+            sh './jenkins/deploy.sh'
+        }
+
+       stage('Cleanup'){
+         sh '''
+         echo 'prune and cleanup'
+         'npm prune'
+         'rm node_modules -rf'
+
+         mail body: 'project build successful',
+                     subject: 'Build successful',
+                     to: 'usermail@testmail.com
+                     
+        '''
+                    
+                    }
+      }
+
+    catch(Exception e) {
+        stage('Error')  {
+        sh '''
+          currentBuild.result = "FAILURE"
+
+              mail body: "project build error is here: ${env.BUILD_URL}" ,
+              subject: 'Build failed',
+              to: 'usermail@testmail.com'
+              
+             
+        '''
+               throw e;
+       }
+    
+    }
+}
